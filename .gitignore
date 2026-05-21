@@ -13,6 +13,9 @@ venv/
 server.out.log
 server.err.log
 
+# Local private notes
+_private/
+
 # Local vendor artifacts
 sts2-coach/vendor/
 sts2-coach/vendor/*.zip
@@ -22,4 +25,3 @@ sts2-coach/vendor/*.zip
 Thumbs.db
 .idea/
 .vscode/
-

@@ -47,9 +47,28 @@ async function fetchJson(url, options = {}) {
   });
   const payload = await response.json();
   if (!response.ok || payload.ok === false) {
-    throw new Error(payload.error || `HTTP ${response.status}`);
+    const error = new Error(payload.error || `HTTP ${response.status}`);
+    error.payload = payload;
+    throw error;
   }
   return payload;
+}
+
+function formatTrace(trace) {
+  if (!trace || !Array.isArray(trace.spans)) return "";
+  const spans = trace.spans.map((span) => `- ${span.name}: ${span.ms}ms`).join("\n");
+  const slowest = trace.spans.reduce((best, span) => (!best || span.ms > best.ms ? span : best), null);
+  const slowestLine = slowest ? `\n最慢阶段：${slowest.name} (${slowest.ms}ms)` : "";
+  const firstEventLine =
+    trace.meta && trace.meta.first_stream_event_ms ? `\n首个流事件：${trace.meta.first_stream_event_ms}ms` : "";
+  const visibleLine =
+    trace.meta && trace.meta.first_visible_delta_ms ? `\n首个可见文本：${trace.meta.first_visible_delta_ms}ms` : "";
+  const failedLine = trace.failed_span ? `\n失败阶段：${trace.failed_span}` : "";
+  return `\n\n本次耗时：${trace.total_ms}ms${firstEventLine}${visibleLine}${slowestLine}${failedLine}\n${spans}`;
+}
+
+function withTrace(text, trace) {
+  return `${text || ""}${formatTrace(trace)}`;
 }
 
 async function refreshHealth() {
@@ -62,7 +81,7 @@ async function refreshHealth() {
     screenStatus.textContent = payload.current.screen || "未知";
     modeStatus.textContent = payload.current.recommended_mode || "general";
     if (payload.sts2.ok && !stateOk) {
-      stateSummary.textContent = `Mod 已连接，但 /state 状态接口异常：\n${payload.sts2.state_error || "未知错误"}\n\n这通常是 STS2-Agent 与当前游戏版本不兼容。`;
+      stateSummary.textContent = `Mod 已连接，但 /state 状态接口异常：\n${payload.sts2.state_error || "未知错误"}`;
     } else {
       await refreshState();
     }
@@ -85,23 +104,88 @@ async function refreshState() {
   }
 }
 
+function parseSseEvents(buffer) {
+  const events = [];
+  let rest = buffer;
+  let boundary = rest.indexOf("\n\n");
+  while (boundary !== -1) {
+    const rawEvent = rest.slice(0, boundary);
+    rest = rest.slice(boundary + 2);
+    const parsed = { event: "message", data: "" };
+    for (const line of rawEvent.split("\n")) {
+      if (line.startsWith("event:")) {
+        parsed.event = line.slice(6).trim();
+      } else if (line.startsWith("data:")) {
+        parsed.data += line.slice(5).trim();
+      }
+    }
+    if (parsed.data) events.push(parsed);
+    boundary = rest.indexOf("\n\n");
+  }
+  return { events, rest };
+}
+
+async function analyzeStream(mode) {
+  const response = await fetch("/api/analyze/stream", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode, note: noteInput.value }),
+  });
+  if (!response.ok || !response.body) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let buffer = "";
+  let advice = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parsed = parseSseEvents(buffer);
+    buffer = parsed.rest;
+
+    for (const item of parsed.events) {
+      const payload = JSON.parse(item.data);
+      if (item.event === "state") {
+        lastState = payload.state;
+        stateSummary.textContent = compactState(payload.state);
+        modeStatus.textContent = payload.recommended_mode || mode;
+      } else if (item.event === "status" && !advice) {
+        adviceText.textContent = "分析中，正在等待模型输出...";
+      } else if (item.event === "delta") {
+        advice += payload.text || "";
+        adviceText.textContent = advice;
+      } else if (item.event === "done") {
+        lastAdvice = payload.advice || advice;
+        lastState = payload.state || lastState;
+        adviceText.textContent = withTrace(lastAdvice, payload.trace);
+        modeStatus.textContent = payload.recommended_mode || mode;
+        saveAdviceBtn.disabled = !lastAdvice;
+        return;
+      } else if (item.event === "error") {
+        const error = new Error(payload.error || "stream error");
+        error.payload = payload;
+        throw error;
+      }
+    }
+  }
+
+  lastAdvice = advice;
+  saveAdviceBtn.disabled = !lastAdvice;
+}
+
 async function analyze(mode) {
   loading.hidden = false;
-  adviceText.textContent = "分析中，请稍等...";
+  adviceText.textContent = "分析中，正在建立流式连接...";
   saveAdviceBtn.disabled = true;
+  lastAdvice = "";
   try {
-    const payload = await fetchJson("/api/analyze", {
-      method: "POST",
-      body: JSON.stringify({ mode, note: noteInput.value }),
-    });
-    lastAdvice = payload.advice;
-    lastState = payload.state;
-    adviceText.textContent = payload.advice;
-    stateSummary.textContent = compactState(payload.state);
-    modeStatus.textContent = payload.recommended_mode || mode;
-    saveAdviceBtn.disabled = false;
+    await analyzeStream(mode);
   } catch (error) {
-    adviceText.textContent = `分析失败：${error.message}`;
+    adviceText.textContent = withTrace(`分析失败：${error.message}`, error.payload && error.payload.trace);
   } finally {
     loading.hidden = true;
   }

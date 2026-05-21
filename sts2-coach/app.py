@@ -5,12 +5,15 @@ import os
 import socket
 import sys
 import time
+from contextlib import nullcontext
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib import error, request
 from urllib.parse import urlparse
+
+from tracing import TraceContext
 
 
 ROOT = Path(__file__).resolve().parent
@@ -59,6 +62,21 @@ def json_response(handler: BaseHTTPRequestHandler, status: int, payload: dict[st
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
     handler.wfile.write(body)
+
+
+def sse_start(handler: BaseHTTPRequestHandler) -> None:
+    handler.send_response(200)
+    handler.send_header("Content-Type", "text/event-stream; charset=utf-8")
+    handler.send_header("Cache-Control", "no-cache")
+    handler.send_header("Connection", "close")
+    handler.end_headers()
+
+
+def sse_write(handler: BaseHTTPRequestHandler, event: str, payload: dict[str, Any]) -> None:
+    data = json.dumps(payload, ensure_ascii=False)
+    body = f"event: {event}\ndata: {data}\n\n".encode("utf-8")
+    handler.wfile.write(body)
+    handler.wfile.flush()
 
 
 def text_response(handler: BaseHTTPRequestHandler, status: int, body: bytes, content_type: str) -> None:
@@ -283,16 +301,36 @@ def mode_instruction(mode: str) -> str:
     return instructions.get(mode, instructions["general"])
 
 
-def build_openai_payload(mode: str, state_summary: dict[str, Any], user_note: str) -> dict[str, Any]:
-    system_prompt = read_text(PROMPTS_DIR / "system.md")
-    user_payload = {
+def json_char_count(value: Any) -> int:
+    return len(json.dumps(value, ensure_ascii=False))
+
+
+def build_user_payload(
+    mode: str,
+    state_summary: dict[str, Any],
+    user_note: str,
+    memory: str,
+    knowledge: str,
+) -> dict[str, Any]:
+    return {
         "analysis_mode": mode,
         "mode_instruction": mode_instruction(mode),
         "user_note": user_note,
         "game_state_summary": state_summary,
-        "memory": load_memory(),
-        "knowledge": load_knowledge(),
+        "memory": memory,
+        "knowledge": knowledge,
     }
+
+
+def build_openai_payload(
+    mode: str,
+    state_summary: dict[str, Any],
+    user_note: str,
+    memory: str,
+    knowledge: str,
+) -> dict[str, Any]:
+    system_prompt = read_text(PROMPTS_DIR / "system.md")
+    user_payload = build_user_payload(mode, state_summary, user_note, memory, knowledge)
     return {
         "model": env("OPENAI_MODEL", "gpt-5.4"),
         "reasoning": {"effort": env("OPENAI_REASONING_EFFORT", "medium")},
@@ -326,94 +364,271 @@ def extract_openai_text(payload: dict[str, Any]) -> str:
     return "\n".join(chunks).strip() or json.dumps(payload, ensure_ascii=False, indent=2)
 
 
-def call_openai(mode: str, state_summary: dict[str, Any], user_note: str) -> str:
+def call_openai(
+    mode: str,
+    state_summary: dict[str, Any],
+    user_note: str,
+    memory: str,
+    knowledge: str,
+    trace: TraceContext | None = None,
+) -> str:
     api_key = env("OPENAI_API_KEY")
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY is not configured. Copy .env.example to .env and fill it in.")
 
     base_url = env("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
     model = env("OPENAI_MODEL", "gpt-5.4")
+    if trace:
+        trace.set_meta(model=model, base_url_host=urlparse(base_url).hostname)
     if "api.openai.com" not in base_url or model.startswith("deepseek"):
-        return call_chat_completions(mode, state_summary, user_note, api_key, base_url, model)
+        return call_chat_completions(mode, state_summary, user_note, memory, knowledge, api_key, base_url, model, trace)
 
-    payload = build_openai_payload(mode, state_summary, user_note)
-    req = request.Request(
-        f"{base_url}/responses",
-        method="POST",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-    )
+    with trace.span("llm_payload_build") if trace else nullcontext():
+        payload = build_openai_payload(mode, state_summary, user_note, memory, knowledge)
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        if trace:
+            trace.set_meta(input_chars=len(body.decode("utf-8")))
+        req = request.Request(
+            f"{base_url}/responses",
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+            data=body,
+        )
     try:
-        with request.urlopen(req, timeout=90) as resp:
-            response_payload = json.loads(resp.read().decode("utf-8"))
+        with trace.span("llm_http_wait") if trace else nullcontext():
+            with request.urlopen(req, timeout=90) as resp:
+                response_payload = json.loads(resp.read().decode("utf-8"))
     except error.HTTPError as exc:
         details = exc.read().decode("utf-8", errors="replace")
         raise RuntimeError(f"OpenAI API error HTTP {exc.code}: {details}") from exc
     except (error.URLError, TimeoutError, socket.timeout) as exc:
         raise RuntimeError(f"Cannot reach OpenAI API: {exc}") from exc
-    return extract_openai_text(response_payload)
+    with trace.span("llm_response_parse") if trace else nullcontext():
+        text = extract_openai_text(response_payload)
+        if trace:
+            trace.set_meta(output_chars=len(text))
+        return text
 
 
 def call_chat_completions(
     mode: str,
     state_summary: dict[str, Any],
     user_note: str,
+    memory: str,
+    knowledge: str,
     api_key: str,
     base_url: str,
     model: str,
+    trace: TraceContext | None = None,
 ) -> str:
-    system_prompt = read_text(PROMPTS_DIR / "system.md")
-    user_payload = {
-        "analysis_mode": mode,
-        "mode_instruction": mode_instruction(mode),
-        "user_note": user_note,
-        "game_state_summary": state_summary,
-        "memory": load_memory(),
-        "knowledge": load_knowledge(),
-    }
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {
-                "role": "user",
-                "content": "请根据以下 JSON 为当前 STS2 猎人 A10 run 给宏观建议：\n"
-                + json.dumps(user_payload, ensure_ascii=False, indent=2),
+    with trace.span("llm_payload_build") if trace else nullcontext():
+        system_prompt = read_text(PROMPTS_DIR / "system.md")
+        user_payload = build_user_payload(mode, state_summary, user_note, memory, knowledge)
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": "请根据以下 JSON 为当前 STS2 猎人 A10 run 给宏观建议：\n"
+                    + json.dumps(user_payload, ensure_ascii=False, indent=2),
+                },
+            ],
+            "max_tokens": 1800,
+            "temperature": 0.3,
+            "enable_thinking": False,
+        }
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        if trace:
+            trace.set_meta(input_chars=len(body.decode("utf-8")))
+        req = request.Request(
+            f"{base_url}/chat/completions",
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
             },
-        ],
-        "max_tokens": 1800,
-        "temperature": 0.3,
-    }
-    req = request.Request(
-        f"{base_url}/chat/completions",
-        method="POST",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-    )
+            data=body,
+        )
     try:
-        with request.urlopen(req, timeout=90) as resp:
-            response_payload = json.loads(resp.read().decode("utf-8"))
+        with trace.span("llm_http_wait") if trace else nullcontext():
+            with request.urlopen(req, timeout=90) as resp:
+                response_payload = json.loads(resp.read().decode("utf-8"))
     except error.HTTPError as exc:
         details = exc.read().decode("utf-8", errors="replace")
         raise RuntimeError(f"Chat Completions API error HTTP {exc.code}: {details}") from exc
     except (error.URLError, TimeoutError, socket.timeout) as exc:
         raise RuntimeError(f"Cannot reach Chat Completions API: {exc}") from exc
 
-    choices = response_payload.get("choices")
-    if isinstance(choices, list) and choices:
-        message = choices[0].get("message") if isinstance(choices[0], dict) else None
-        content = message.get("content") if isinstance(message, dict) else None
-        if isinstance(content, str) and content.strip():
-            return content.strip()
-    return json.dumps(response_payload, ensure_ascii=False, indent=2)
+    with trace.span("llm_response_parse") if trace else nullcontext():
+        choices = response_payload.get("choices")
+        if isinstance(choices, list) and choices:
+            message = choices[0].get("message") if isinstance(choices[0], dict) else None
+            content = message.get("content") if isinstance(message, dict) else None
+            if isinstance(content, str) and content.strip():
+                text = content.strip()
+                if trace:
+                    trace.set_meta(output_chars=len(text))
+                return text
+        text = json.dumps(response_payload, ensure_ascii=False, indent=2)
+        if trace:
+            trace.set_meta(output_chars=len(text))
+        return text
+
+
+def chat_stream_delta(payload: dict[str, Any]) -> str:
+    choices = payload.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return ""
+    choice = choices[0]
+    if not isinstance(choice, dict):
+        return ""
+    delta = choice.get("delta")
+    if isinstance(delta, dict):
+        content = delta.get("content")
+        if isinstance(content, str):
+            return content
+    message = choice.get("message")
+    if isinstance(message, dict):
+        content = message.get("content")
+        if isinstance(content, str):
+            return content
+    return ""
+
+
+def call_chat_completions_stream(
+    mode: str,
+    state_summary: dict[str, Any],
+    user_note: str,
+    memory: str,
+    knowledge: str,
+    api_key: str,
+    base_url: str,
+    model: str,
+    on_delta: Any,
+    trace: TraceContext | None = None,
+) -> str:
+    with trace.span("llm_payload_build") if trace else nullcontext():
+        system_prompt = read_text(PROMPTS_DIR / "system.md")
+        user_payload = build_user_payload(mode, state_summary, user_note, memory, knowledge)
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": "请根据以下 JSON 为当前 STS2 猎人 A10 run 给宏观建议：\n"
+                    + json.dumps(user_payload, ensure_ascii=False, indent=2),
+                },
+            ],
+            "max_tokens": 1800,
+            "temperature": 0.3,
+            "stream": True,
+            "enable_thinking": False,
+        }
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        if trace:
+            trace.set_meta(input_chars=len(body.decode("utf-8")))
+        req = request.Request(
+            f"{base_url}/chat/completions",
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "Accept": "text/event-stream",
+            },
+            data=body,
+        )
+
+    output_parts: list[str] = []
+    chunk_count = 0
+    content_chunk_count = 0
+    started = time.perf_counter()
+    first_event_ms: int | None = None
+    first_delta_ms: int | None = None
+    try:
+        with trace.span("llm_http_stream") if trace else nullcontext():
+            with request.urlopen(req, timeout=120) as resp:
+                for raw_line in resp:
+                    line = raw_line.decode("utf-8", errors="replace").strip()
+                    if not line or line.startswith(":"):
+                        continue
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if data == "[DONE]":
+                        break
+                    if first_event_ms is None:
+                        first_event_ms = round((time.perf_counter() - started) * 1000)
+                        if trace:
+                            trace.set_meta(first_stream_event_ms=first_event_ms)
+                    chunk_count += 1
+                    try:
+                        event_payload = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+                    delta = chat_stream_delta(event_payload)
+                    if delta:
+                        if first_delta_ms is None:
+                            first_delta_ms = round((time.perf_counter() - started) * 1000)
+                            if trace:
+                                trace.set_meta(ttfb_ms=first_delta_ms, first_visible_delta_ms=first_delta_ms)
+                        content_chunk_count += 1
+                        output_parts.append(delta)
+                        on_delta(delta)
+    except error.HTTPError as exc:
+        details = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Chat Completions stream error HTTP {exc.code}: {details}") from exc
+    except (error.URLError, TimeoutError, socket.timeout) as exc:
+        raise RuntimeError(f"Cannot reach Chat Completions stream API: {exc}") from exc
+
+    text = "".join(output_parts).strip()
+    if trace:
+        trace.set_meta(
+            output_chars=len(text),
+            stream_chunks=chunk_count,
+            content_chunks=content_chunk_count,
+            first_stream_event_ms=first_event_ms,
+            first_visible_delta_ms=first_delta_ms,
+            ttfb_ms=first_delta_ms,
+        )
+    return text
+
+
+def call_openai_stream(
+    mode: str,
+    state_summary: dict[str, Any],
+    user_note: str,
+    memory: str,
+    knowledge: str,
+    on_delta: Any,
+    trace: TraceContext | None = None,
+) -> str:
+    api_key = env("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY is not configured. Copy .env.example to .env and fill it in.")
+
+    base_url = env("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+    model = env("OPENAI_MODEL", "gpt-5.4")
+    if trace:
+        trace.set_meta(model=model, base_url_host=urlparse(base_url).hostname)
+    return call_chat_completions_stream(
+        mode,
+        state_summary,
+        user_note,
+        memory,
+        knowledge,
+        api_key,
+        base_url,
+        model,
+        on_delta,
+        trace,
+    )
 
 
 def append_memory(note: str, *, source: str = "manual") -> str:
@@ -449,7 +664,9 @@ class CoachHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
         try:
-            if parsed.path == "/api/analyze":
+            if parsed.path == "/api/analyze/stream":
+                self.handle_analyze_stream()
+            elif parsed.path == "/api/analyze":
                 self.handle_analyze()
             elif parsed.path == "/api/memory/append":
                 self.handle_memory_append()
@@ -522,26 +739,104 @@ class CoachHandler(BaseHTTPRequestHandler):
         )
 
     def handle_analyze(self) -> None:
-        body = read_json_body(self)
-        mode = str(body.get("mode") or "general")
-        if mode not in ALLOWED_MODES:
-            raise ValueError(f"mode must be one of: {', '.join(sorted(ALLOWED_MODES))}")
-        user_note = str(body.get("note") or "")
-        raw_state = get_raw_state()
-        summary = summarize_state(raw_state)
-        advice = call_openai(mode, summary, user_note)
-        json_response(
-            self,
-            200,
-            {
-                "ok": True,
-                "mode": mode,
-                "recommended_mode": detect_recommended_mode(summary),
-                "advice": advice,
-                "state": summary,
-                "created_at": int(time.time()),
-            },
-        )
+        trace = TraceContext()
+        try:
+            with trace.span("read_body"):
+                body = read_json_body(self)
+                mode = str(body.get("mode") or "general")
+                user_note = str(body.get("note") or "")
+                trace.set_meta(mode=mode)
+                if mode not in ALLOWED_MODES:
+                    raise ValueError(f"mode must be one of: {', '.join(sorted(ALLOWED_MODES))}")
+
+            with trace.span("read_state"):
+                raw_state = get_raw_state()
+                trace.set_meta(state_chars=json_char_count(raw_state))
+
+            with trace.span("summarize_state"):
+                summary = summarize_state(raw_state)
+
+            with trace.span("load_context"):
+                memory = load_memory()
+                knowledge = load_knowledge()
+                trace.set_meta(memory_chars=len(memory), knowledge_chars=len(knowledge))
+
+            with trace.span("llm_request"):
+                advice = call_openai(mode, summary, user_note, memory, knowledge, trace)
+
+            with trace.span("response_build"):
+                payload = {
+                    "ok": True,
+                    "mode": mode,
+                    "recommended_mode": detect_recommended_mode(summary),
+                    "advice": advice,
+                    "state": summary,
+                    "created_at": int(time.time()),
+                }
+            payload["trace"] = trace.to_payload()
+
+            json_response(self, 200, payload)
+        except ValueError as exc:
+            json_response(self, 400, {"ok": False, "error": str(exc), "trace": trace.to_payload()})
+        except Exception as exc:
+            json_response(self, 500, {"ok": False, "error": str(exc), "trace": trace.to_payload()})
+
+    def handle_analyze_stream(self) -> None:
+        trace = TraceContext()
+        with trace.span("read_body"):
+            body = read_json_body(self)
+            mode = str(body.get("mode") or "general")
+            user_note = str(body.get("note") or "")
+            trace.set_meta(mode=mode, streaming=True)
+            if mode not in ALLOWED_MODES:
+                raise ValueError(f"mode must be one of: {', '.join(sorted(ALLOWED_MODES))}")
+
+        sse_start(self)
+        advice_parts: list[str] = []
+        try:
+            sse_write(self, "status", {"message": "reading_state"})
+            with trace.span("read_state"):
+                raw_state = get_raw_state()
+                trace.set_meta(state_chars=json_char_count(raw_state))
+
+            with trace.span("summarize_state"):
+                summary = summarize_state(raw_state)
+
+            recommended_mode = detect_recommended_mode(summary)
+            sse_write(self, "state", {"state": summary, "recommended_mode": recommended_mode})
+
+            sse_write(self, "status", {"message": "loading_context"})
+            with trace.span("load_context"):
+                memory = load_memory()
+                knowledge = load_knowledge()
+                trace.set_meta(memory_chars=len(memory), knowledge_chars=len(knowledge))
+
+            def on_delta(delta: str) -> None:
+                advice_parts.append(delta)
+                sse_write(self, "delta", {"text": delta})
+
+            sse_write(self, "status", {"message": "streaming_model"})
+            with trace.span("llm_request"):
+                advice = call_openai_stream(mode, summary, user_note, memory, knowledge, on_delta, trace)
+
+            if not advice:
+                advice = "".join(advice_parts).strip()
+
+            with trace.span("response_build"):
+                payload = {
+                    "ok": True,
+                    "mode": mode,
+                    "recommended_mode": recommended_mode,
+                    "advice": advice,
+                    "state": summary,
+                    "created_at": int(time.time()),
+                    "trace": trace.to_payload(),
+                }
+            sse_write(self, "done", payload)
+            self.close_connection = True
+        except Exception as exc:
+            sse_write(self, "error", {"ok": False, "error": str(exc), "trace": trace.to_payload()})
+            self.close_connection = True
 
     def handle_memory_append(self) -> None:
         body = read_json_body(self)
