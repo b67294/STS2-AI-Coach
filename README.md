@@ -57,15 +57,15 @@ STS2-Agent 来自哪个 GitHub 仓库
 
 如果上游更新，可以单独更新 submodule，而不会把外部项目的历史和代码揉进本仓库。
 
-## 同学如何拉取
+## Clone
 
-首次 clone：
+Clone with submodules:
 
 ```powershell
-git clone --recurse-submodules <你的仓库地址>
+git clone --recurse-submodules <repository-url>
 ```
 
-如果已经 clone，但 `STS2-Agent/` 目录没有完整内容：
+If the repository was cloned without submodules:
 
 ```powershell
 git submodule update --init --recursive
@@ -84,7 +84,7 @@ git commit -m "Update STS2-Agent submodule"
 git push
 ```
 
-同学同步时：
+After pulling updates from this repository:
 
 ```powershell
 git pull
@@ -118,12 +118,12 @@ copy .env.example .env
 http://127.0.0.1:8766
 ```
 
-## 协作约定
+## Development Notes
 
-- 主要开发代码放在 `sts2-coach/`
-- 默认不要改 `STS2-Agent/`
-- 如果必须改 `STS2-Agent/`，先 fork 上游仓库，再把 submodule 指向自己的 fork
-- 不提交 `.env`、日志、缓存、vendor 压缩包和本地运行产物
+- Application code lives in `sts2-coach/`.
+- `STS2-Agent/` is tracked as an external submodule dependency.
+- Local secrets, logs, caches, downloaded release bundles, and runtime artifacts are excluded from version control.
+- Changes to `STS2-Agent` should be made in a fork or upstream contribution flow, then referenced by updating the submodule target.
 
 ## 当前实现特点
 
