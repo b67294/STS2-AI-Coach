@@ -134,12 +134,14 @@ http://127.0.0.1:8080/health
 
 ### 3. 配置 Coach
 
+仓库只提供 `.env.example` 示例文件，不提交真实 `.env`。首次运行前需要复制一份并改名为 `.env`：
+
 ```powershell
 cd sts2-coach
 copy .env.example .env
 ```
 
-在 `.env` 中填写模型配置：
+然后在新生成的 `.env` 中填写自己的模型配置：
 
 ```text
 OPENAI_API_KEY=your_api_key

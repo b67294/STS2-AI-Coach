@@ -11,7 +11,7 @@
 http://127.0.0.1:8080/health
 ```
 
-3. 复制 `.env.example` 为 `.env`，填入 `OPENAI_API_KEY`。
+3. 复制/改名 `.env.example` 为 `.env`，并在 `.env` 中填入自己的 `OPENAI_API_KEY`。
 
 ## 启动
 
