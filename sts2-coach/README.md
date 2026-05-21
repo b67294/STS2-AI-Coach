@@ -17,7 +17,13 @@ http://127.0.0.1:8080/health
 
 ```powershell
 cd "F:\slay the spire\sts2-coach"
-.\start-coach.ps1
+.\start-coach.bat
+```
+
+或者显式使用 PowerShell 执行：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\start-coach.ps1
 ```
 
 然后打开：

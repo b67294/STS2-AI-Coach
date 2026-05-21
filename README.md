@@ -149,7 +149,13 @@ OPENAI_MODEL=gpt-5.4
 ### 4. 启动
 
 ```powershell
-.\start-coach.ps1
+.\start-coach.bat
+```
+
+或者显式使用 PowerShell 执行脚本：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\start-coach.ps1
 ```
 
 打开：
