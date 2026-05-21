@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>STS2 Coach</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <h1>STS2 Coach</h1>
+          <p id="subtitle">猎人 A10 宏观陪练</p>
+        </div>
+        <button id="refreshBtn" class="icon-btn" title="刷新状态">↻</button>
+      </header>
+
+      <section class="status-grid" aria-label="连接状态">
+        <div>
+          <span class="label">游戏</span>
+          <strong id="gameStatus">检查中</strong>
+        </div>
+        <div>
+          <span class="label">OpenAI</span>
+          <strong id="apiStatus">检查中</strong>
+        </div>
+        <div>
+          <span class="label">屏幕</span>
+          <strong id="screenStatus">未知</strong>
+        </div>
+        <div>
+          <span class="label">模式</span>
+          <strong id="modeStatus">general</strong>
+        </div>
+      </section>
+
+      <section class="summary" aria-label="当前 Run 摘要">
+        <h2>当前局面</h2>
+        <pre id="stateSummary">等待状态...</pre>
+      </section>
+
+      <section class="controls" aria-label="分析操作">
+        <button data-mode="reward">分析当前选择</button>
+        <button data-mode="map">路线建议</button>
+        <button data-mode="shop">商店建议</button>
+        <button data-mode="boss">Boss 前体检</button>
+        <button data-mode="review">复盘这把</button>
+      </section>
+
+      <section class="note-box">
+        <label for="noteInput">补充说明</label>
+        <textarea id="noteInput" rows="3" placeholder="例如：我想保守一点，或者下一层准备打精英。"></textarea>
+      </section>
+
+      <section class="advice">
+        <div class="advice-header">
+          <h2>建议</h2>
+          <button id="saveAdviceBtn" disabled>记录建议</button>
+        </div>
+        <div id="loading" hidden>分析中...</div>
+        <pre id="adviceText">在奖励、地图、事件、商店或 Boss 前点击上面的按钮。</pre>
+      </section>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,225 @@
+:root {
+  color-scheme: dark;
+  --bg: #101214;
+  --panel: #181c20;
+  --panel-2: #20262b;
+  --text: #ece7dc;
+  --muted: #aaa69d;
+  --line: #30363d;
+  --accent: #d9b15f;
+  --good: #87d37c;
+  --bad: #ff7d7d;
+  --focus: #77b8ff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 340px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
+}
+
+button,
+textarea {
+  font: inherit;
+}
+
+.shell {
+  width: min(100vw, 560px);
+  min-height: 100vh;
+  padding: 14px;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 22px;
+  line-height: 1.15;
+}
+
+h2 {
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+#subtitle {
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+.icon-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.status-grid > div,
+.summary,
+.note-box,
+.advice {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.status-grid > div {
+  padding: 10px;
+  min-width: 0;
+}
+
+.label {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 3px;
+}
+
+.status-grid strong {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+
+.ok {
+  color: var(--good);
+}
+
+.fail {
+  color: var(--bad);
+}
+
+.summary,
+.note-box,
+.advice {
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+#stateSummary {
+  max-height: 190px;
+  overflow: auto;
+  color: var(--muted);
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.controls button,
+#saveAdviceBtn {
+  min-height: 40px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.controls button:hover,
+#saveAdviceBtn:hover,
+.icon-btn:hover {
+  border-color: var(--accent);
+}
+
+.controls button:focus-visible,
+#saveAdviceBtn:focus-visible,
+.icon-btn:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.note-box label {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+textarea {
+  width: 100%;
+  resize: vertical;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: #0d0f11;
+  color: var(--text);
+  padding: 9px;
+}
+
+.advice-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+#saveAdviceBtn {
+  min-height: 32px;
+  padding: 0 10px;
+}
+
+#saveAdviceBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+#loading {
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+
+#adviceText {
+  font-size: 14px;
+}
+
+@media (max-width: 420px) {
+  .shell {
+    padding: 10px;
+  }
+
+  .controls {
+    grid-template-columns: 1fr;
+  }
+}

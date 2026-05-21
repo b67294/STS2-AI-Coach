@@ -1,0 +1,2 @@
+# The MVP server uses only the Python standard library.
+# Keep this file so future FastAPI/OpenAI SDK migration has an obvious home.
