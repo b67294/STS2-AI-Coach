@@ -83,7 +83,14 @@ def read_json_body(handler: BaseHTTPRequestHandler) -> dict[str, Any]:
     return parsed
 
 
-def http_json(method: str, url: str, *, payload: dict[str, Any] | None = None, timeout: float = 12.0) -> Any:
+def http_json(
+    method: str,
+    url: str,
+    *,
+    payload: dict[str, Any] | None = None,
+    timeout: float = 12.0,
+    use_proxy: bool = True,
+) -> Any:
     body = None
     headers = {"Accept": "application/json"}
     if payload is not None:
@@ -91,7 +98,8 @@ def http_json(method: str, url: str, *, payload: dict[str, Any] | None = None, t
         headers["Content-Type"] = "application/json"
     req = request.Request(url, method=method, headers=headers, data=body)
     try:
-        with request.urlopen(req, timeout=timeout) as resp:
+        opener = request.build_opener(request.ProxyHandler({})) if not use_proxy else request
+        with opener.open(req, timeout=timeout) as resp:
             raw = resp.read()
     except error.HTTPError as exc:
         details = exc.read().decode("utf-8", errors="replace")
@@ -110,14 +118,14 @@ def unwrap_mod_response(payload: Any) -> Any:
 
 
 def get_mod_health() -> dict[str, Any]:
-    return unwrap_mod_response(http_json("GET", f"{sts2_base_url()}/health", timeout=4.0))
+    return unwrap_mod_response(http_json("GET", f"{sts2_base_url()}/health", timeout=4.0, use_proxy=False))
 
 
 def get_raw_state() -> dict[str, Any]:
     last_error: Exception | None = None
     for attempt in range(3):
         try:
-            data = unwrap_mod_response(http_json("GET", f"{sts2_base_url()}/state", timeout=12.0))
+            data = unwrap_mod_response(http_json("GET", f"{sts2_base_url()}/state", timeout=12.0, use_proxy=False))
             break
         except Exception as exc:
             last_error = exc
