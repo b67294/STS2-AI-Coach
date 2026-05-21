@@ -1,68 +1,119 @@
 # STS2 AI Coach
 
-一个给《Slay the Spire 2》做 AI 陪练的本地项目。
+🔗 Repository: https://github.com/b67294/sts2-ai-coach
 
-核心思路是：游戏 Mod 读取当前局面，转换成结构化状态；本地 Coach 服务把状态和私域知识拼成上下文，调用 LLM 给出路线、抓牌、商店、Boss 前体检和复盘建议。
+一个面向《Slay the Spire 2》的本地 AI 陪练项目。它通过游戏 Mod 读取当前局面，把游戏状态转换成结构化上下文，再结合本地策略知识库调用 LLM，为玩家提供路线、抓牌、商店、事件、Boss 前体检和复盘建议。
 
-## 项目结构
+> 当前定位是 **只读陪练 / 决策辅助**，不是自动代打工具。
 
-```text
-STS2 AI Coach
-├─ sts2-coach/          本项目主要开发目录：本地网页陪练 + LLM 调用
-├─ STS2-Agent/          外部依赖：游戏 Mod + MCP Server，使用 Git submodule 管理
-├─ README.md            当前说明文档
-├─ .gitignore           主仓库忽略规则
-└─ .gitmodules          submodule 来源记录
-```
+## ✨ Highlights
 
-## 技术链路
+- 🎮 **游戏内状态采集**：通过 `STS2-Agent` Mod 读取当前 run 状态。
+- 🔌 **本地状态桥接**：将游戏对象序列化为外部程序可消费的 JSON。
+- 🧠 **轻量知识增强**：使用 Markdown / JSON 私域资料增强模型上下文，不依赖向量数据库。
+- 🤖 **LLM 分析**：支持 OpenAI Responses API，也兼容 OpenAI-style Chat Completions 服务。
+- 🖥️ **本地网页陪练**：用原生 HTML / CSS / JavaScript 提供简洁交互界面。
+- 🧩 **Submodule 管理**：`STS2-Agent` 作为外部依赖引入，便于跟随上游更新。
+
+## 🧱 Architecture
 
 ```text
 Slay the Spire 2
     ↓
-C# Mod 读取游戏对象和运行状态
+C# Mod reads game objects and runtime state
     ↓
-本地 HTTP JSON 状态桥接
+Local HTTP JSON state bridge
     ↓
-Python Coach 服务压缩当前局面
+Python Coach service summarizes the current run
     ↓
-Markdown / JSON 私域知识增强
+Markdown / JSON private knowledge context
     ↓
 OpenAI-compatible LLM
     ↓
-HTML / CSS / JS 本地网页展示建议
+Local Web UI shows decision advice
 ```
 
-## 模块说明
-
-| 模块 | 技术 | 作用 |
-| --- | --- | --- |
-| 游戏状态采集 | C# Mod / .NET / GodotSharp / Harmony | 注入游戏环境，读取游戏内存和对象中的状态 |
-| 状态桥接 | Local HTTP Server / JSON | 把游戏内部对象序列化成外部程序可读的结构化数据 |
-| MCP 外接 | Python / FastMCP | 将 STS2-Agent 的能力封装为 MCP tools，供支持 MCP 的 AI 客户端调用 |
-| Coach 陪练 | Python 标准库 HTTP Server | 读取当前状态，压缩局面，拼接知识库并调用 LLM |
-| 知识增强 | Markdown / JSON / Prompt Stuffing | 不使用向量数据库，直接把轻量私域资料放入模型上下文 |
-| 前端交互 | HTML / CSS / JavaScript | 展示当前局面，并触发路线、商店、Boss 前体检、复盘等分析 |
-
-## 为什么用 submodule
-
-`STS2-Agent` 是外部项目，后续可能继续更新。这里不把它复制成普通目录，而是作为 Git submodule 引入。
-
-这样主仓库只记录：
+## 📦 Project Structure
 
 ```text
-STS2-Agent 来自哪个 GitHub 仓库
-当前锁定到哪个 commit
+sts2-ai-coach/
+├─ sts2-coach/       Local coach web app and LLM integration
+├─ STS2-Agent/       External game Mod + MCP Server, tracked as a Git submodule
+├─ README.md         Project documentation
+├─ .gitignore        Ignore rules for secrets and runtime artifacts
+└─ .gitmodules       Submodule source configuration
 ```
 
-如果上游更新，可以单独更新 submodule，而不会把外部项目的历史和代码揉进本仓库。
+## 🧠 How It Works
 
-## Clone
+### 1. Game State Collection
+
+`STS2-Agent` is a C# Mod built for Slay the Spire 2. It runs inside the game environment and reads runtime objects such as:
+
+- player state
+- deck
+- relics
+- potions
+- rewards
+- map
+- shop
+- events
+- combat state
+
+The raw game state is exposed as structured data for external tools.
+
+### 2. Local State Bridge
+
+The Mod exposes a local HTTP JSON bridge. External programs do not need to understand the internal game object model or hook the game process directly. They only consume structured local state.
+
+`STS2-Agent` also provides an MCP wrapper so MCP-compatible AI clients can access game state and actions as tools.
+
+### 3. Coach Layer
+
+`sts2-coach` is the local companion app. It reads the current state, compresses it into a model-friendly summary, then combines it with local knowledge files before calling an LLM.
+
+This project does **not** use a vector database or embedding retrieval yet. The current design is a lightweight prompt-stuffing approach:
+
+```text
+current game state summary
++ local Markdown / JSON knowledge
++ user note
++ system prompt
+=> LLM advice
+```
+
+This keeps the system simple and easy to run. The tradeoff is higher token usage per request.
+
+### 4. Web Interaction
+
+The frontend is a small local control panel built with HTML, CSS, and JavaScript. It shows current run state and provides scenario buttons such as:
+
+- reward analysis
+- route advice
+- shop advice
+- boss checkup
+- run review
+
+## 🛠️ Tech Stack
+
+| Layer | Technology | Purpose |
+| --- | --- | --- |
+| Game Mod | C# / .NET / GodotSharp / Harmony | Read game runtime state from inside STS2 |
+| State Bridge | Local HTTP / JSON | Convert game objects into structured external data |
+| MCP Wrapper | Python / FastMCP | Expose Mod capabilities as MCP tools |
+| Coach Backend | Python standard library HTTP server | Summarize state, assemble context, call LLM |
+| Knowledge Layer | Markdown / JSON / Prompt Stuffing | Lightweight private knowledge augmentation |
+| Model API | OpenAI Responses API / Chat Completions-compatible API | Generate advice |
+| Frontend | HTML / CSS / JavaScript | Local UI for player interaction |
+
+## 🚀 Quick Start
+
+### 1. Clone
 
 Clone with submodules:
 
 ```powershell
-git clone --recurse-submodules <repository-url>
+git clone --recurse-submodules https://github.com/b67294/sts2-ai-coach.git
 ```
 
 If the repository was cloned without submodules:
@@ -71,9 +122,45 @@ If the repository was cloned without submodules:
 git submodule update --init --recursive
 ```
 
-## 更新 STS2-Agent
+### 2. Install and Start STS2-Agent
 
-当外部 `STS2-Agent` 有新版本时，在主项目根目录执行：
+Install the `STS2-Agent` Mod into the Slay the Spire 2 `mods/` directory, then start the game.
+
+Verify the Mod bridge:
+
+```text
+http://127.0.0.1:8080/health
+```
+
+### 3. Configure Coach
+
+```powershell
+cd sts2-coach
+copy .env.example .env
+```
+
+Fill in `.env`:
+
+```text
+OPENAI_API_KEY=your_api_key
+OPENAI_MODEL=gpt-5.4
+```
+
+### 4. Run
+
+```powershell
+.\start-coach.ps1
+```
+
+Open:
+
+```text
+http://127.0.0.1:8766
+```
+
+## 🔄 Updating STS2-Agent
+
+`STS2-Agent` is tracked as a Git submodule. To update it:
 
 ```powershell
 cd STS2-Agent
@@ -91,43 +178,26 @@ git pull
 git submodule update --init --recursive
 ```
 
-## 运行 Coach
+## 🔐 Version Control Notes
 
-先确保游戏已经安装并启用 `STS2-Agent` Mod，然后确认本地能访问：
+The repository excludes local-only artifacts such as:
 
-```text
-http://127.0.0.1:8080/health
-```
+- `.env`
+- logs
+- Python caches
+- downloaded release bundles
+- local vendor archives
 
-配置环境变量：
+`STS2-Agent/` should usually be treated as an external dependency. If changes to `STS2-Agent` are required, use a fork or upstream contribution flow, then update the submodule reference.
 
-```powershell
-cd sts2-coach
-copy .env.example .env
-```
+## 📌 Current Scope
 
-在 `.env` 中填写模型 API Key，然后启动：
+- Read-only AI coaching
+- Local single-user workflow
+- Lightweight knowledge augmentation
+- No vector database
+- No automatic gameplay execution from `sts2-coach`
 
-```powershell
-.\start-coach.ps1
-```
+## 📄 License
 
-打开：
-
-```text
-http://127.0.0.1:8766
-```
-
-## Development Notes
-
-- Application code lives in `sts2-coach/`.
-- `STS2-Agent/` is tracked as an external submodule dependency.
-- Local secrets, logs, caches, downloaded release bundles, and runtime artifacts are excluded from version control.
-- Changes to `STS2-Agent` should be made in a fork or upstream contribution flow, then referenced by updating the submodule target.
-
-## 当前实现特点
-
-- 只读陪练，不自动代打
-- 不使用向量数据库，降低部署复杂度
-- 每次分析都会发送当前局面摘要和轻量知识文本
-- 模型无状态，每次请求都基于本次上下文生成结果
+This repository depends on `STS2-Agent`, which is licensed separately. Check the submodule repository for its license and usage terms.
