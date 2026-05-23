@@ -8,6 +8,11 @@ const loading = document.getElementById("loading");
 const noteInput = document.getElementById("noteInput");
 const saveAdviceBtn = document.getElementById("saveAdviceBtn");
 const refreshBtn = document.getElementById("refreshBtn");
+const refreshScoutBtn = document.getElementById("refreshScoutBtn");
+const mapScoutText = document.getElementById("mapScoutText");
+const mapScoutOverview = document.getElementById("mapScoutOverview");
+const eventDetail = document.getElementById("eventDetail");
+const mapScoutRoutes = document.getElementById("mapScoutRoutes");
 
 let lastAdvice = "";
 let lastState = null;
@@ -71,6 +76,195 @@ function withTrace(text, trace) {
   return `${text || ""}${formatTrace(trace)}`;
 }
 
+function clearMapScout(text = "地图页会显示未来路线的怪物、事件和风险预警。") {
+  mapScoutText.textContent = text;
+  mapScoutOverview.innerHTML = "";
+  eventDetail.hidden = true;
+  eventDetail.innerHTML = "";
+  mapScoutRoutes.innerHTML = "";
+}
+
+function riskLabel(risk) {
+  if (risk === "high") return "高风险";
+  if (risk === "medium") return "中风险";
+  return "低风险";
+}
+
+function encounterImages(encounter) {
+  const monsters = Array.isArray(encounter.monsters) ? encounter.monsters : [];
+  return monsters.map((monster) => monster.image_url).filter(Boolean);
+}
+
+function renderEncounterGroup(title, encounters) {
+  if (!Array.isArray(encounters) || !encounters.length) return null;
+  const section = document.createElement("section");
+  section.className = "scout-group";
+
+  const heading = document.createElement("h3");
+  heading.textContent = `${title}（${encounters.length}）`;
+  section.appendChild(heading);
+
+  const grid = document.createElement("div");
+  grid.className = "encounter-grid";
+  for (const encounter of encounters) {
+    const item = document.createElement("article");
+    item.className = "encounter-card";
+
+    const images = encounterImages(encounter).slice(0, 4);
+    if (images.length) {
+      const imgBox = document.createElement("div");
+      imgBox.className = "encounter-images";
+      for (const url of images) {
+        const img = document.createElement("img");
+        img.src = url;
+        img.alt = encounter.name || "遭遇";
+        img.loading = "lazy";
+        imgBox.appendChild(img);
+      }
+      item.appendChild(imgBox);
+    }
+
+    const name = document.createElement("strong");
+    name.textContent = encounter.name || encounter.id || "未知遭遇";
+    item.appendChild(name);
+
+    const monsters = Array.isArray(encounter.monsters)
+      ? encounter.monsters.map((monster) => monster.name || monster.id).filter(Boolean)
+      : [];
+    if (monsters.length) {
+      const meta = document.createElement("span");
+      meta.textContent = monsters.join(" / ");
+      item.appendChild(meta);
+    }
+
+    grid.appendChild(item);
+  }
+  section.appendChild(grid);
+  return section;
+}
+
+function renderEventPool(events) {
+  if (!Array.isArray(events) || !events.length) return null;
+  const section = document.createElement("section");
+  section.className = "scout-group";
+  const heading = document.createElement("h3");
+  heading.textContent = `随机事件池（${events.length}）`;
+  section.appendChild(heading);
+
+  const list = document.createElement("div");
+  list.className = "event-pool";
+  for (const event of events) {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.textContent = event.name || event.id || "未知事件";
+    chip.addEventListener("click", () => renderEventDetail(event));
+    list.appendChild(chip);
+  }
+  section.appendChild(list);
+  return section;
+}
+
+function cleanMarkup(text) {
+  return String(text || "")
+    .replace(/\[[^\]]+\]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function renderEventDetail(event) {
+  eventDetail.hidden = false;
+  eventDetail.innerHTML = "";
+
+  const title = document.createElement("h3");
+  title.textContent = event.name || event.id || "未知事件";
+  eventDetail.appendChild(title);
+
+  const meta = document.createElement("div");
+  meta.className = "event-detail-meta";
+  meta.textContent = `${event.act || "未知区域"} / ${event.type || "Event"}`;
+  eventDetail.appendChild(meta);
+
+  const description = cleanMarkup(event.description);
+  if (description) {
+    const body = document.createElement("p");
+    body.textContent = description;
+    eventDetail.appendChild(body);
+  }
+
+  const preconditions = Array.isArray(event.preconditions) ? event.preconditions.filter(Boolean) : [];
+  if (preconditions.length) {
+    const box = document.createElement("div");
+    box.className = "event-detail-block";
+    box.textContent = `出现条件：${preconditions.map(cleanMarkup).join(" / ")}`;
+    eventDetail.appendChild(box);
+  }
+
+  const options = Array.isArray(event.options) ? event.options.slice(0, 6) : [];
+  if (options.length) {
+    const list = document.createElement("div");
+    list.className = "event-options";
+    for (const option of options) {
+      const item = document.createElement("div");
+      item.className = "event-option";
+      const name = document.createElement("strong");
+      name.textContent = option.title || option.id || "选项";
+      item.appendChild(name);
+      const optionText = cleanMarkup(option.description);
+      if (optionText) {
+        const desc = document.createElement("span");
+        desc.textContent = optionText;
+        item.appendChild(desc);
+      }
+      list.appendChild(item);
+    }
+    eventDetail.appendChild(list);
+  }
+}
+
+function renderMapOverview(overview) {
+  mapScoutOverview.innerHTML = "";
+  eventDetail.hidden = true;
+  eventDetail.innerHTML = "";
+  if (!overview || !overview.encounters) return;
+  const groups = [
+    ["弱怪", overview.encounters.weak],
+    ["普通怪", overview.encounters.normal],
+    ["精英", overview.encounters.elite],
+    ["Boss", overview.encounters.boss],
+  ];
+  for (const [title, encounters] of groups) {
+    const section = renderEncounterGroup(title, encounters);
+    if (section) mapScoutOverview.appendChild(section);
+  }
+  const events = renderEventPool(overview.events);
+  if (events) mapScoutOverview.appendChild(events);
+}
+
+function renderMapScout(payload) {
+  mapScoutOverview.innerHTML = "";
+  mapScoutRoutes.innerHTML = "";
+  if (!payload || payload.ok === false) {
+    const message = payload && payload.knowledge && payload.knowledge.error ? payload.knowledge.error : payload.error;
+    clearMapScout(message || "当前没有可用地图侦察。");
+    return;
+  }
+
+  const routes = Array.isArray(payload.routes) ? payload.routes : [];
+  mapScoutText.textContent = `Act：${payload.act || "未知"} / Boss：${payload.boss || "未知"} / 当前可选路线：${routes.length}`;
+  renderMapOverview(payload.overview);
+}
+
+async function refreshMapScout() {
+  try {
+    mapScoutText.textContent = "正在读取地图侦察...";
+    const response = await fetch("/api/map/scout");
+    const payload = await response.json();
+    renderMapScout(payload);
+  } catch (error) {
+    clearMapScout(`地图侦察失败：${error.message}`);
+  }
+}
+
 async function refreshHealth() {
   try {
     const payload = await fetchJson("/api/health");
@@ -99,6 +293,11 @@ async function refreshState() {
     stateSummary.textContent = compactState(payload.state);
     screenStatus.textContent = payload.state.screen || "未知";
     modeStatus.textContent = payload.recommended_mode || "general";
+    if (payload.state.map) {
+      await refreshMapScout();
+    } else {
+      clearMapScout();
+    }
   } catch (error) {
     stateSummary.textContent = `读取状态失败：${error.message}`;
   }
@@ -183,6 +382,9 @@ async function analyze(mode) {
   saveAdviceBtn.disabled = true;
   lastAdvice = "";
   try {
+    if (mode === "map") {
+      await refreshMapScout();
+    }
     await analyzeStream(mode);
   } catch (error) {
     adviceText.textContent = withTrace(`分析失败：${error.message}`, error.payload && error.payload.trace);
@@ -210,6 +412,7 @@ document.querySelectorAll("[data-mode]").forEach((button) => {
 });
 
 refreshBtn.addEventListener("click", refreshHealth);
+refreshScoutBtn.addEventListener("click", refreshMapScout);
 saveAdviceBtn.addEventListener("click", saveAdvice);
 
 refreshHealth();

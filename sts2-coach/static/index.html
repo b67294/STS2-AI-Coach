@@ -48,6 +48,17 @@
         <button data-mode="review">复盘这把</button>
       </section>
 
+      <section class="map-scout" aria-label="地图侦察">
+        <div class="map-scout-header">
+          <h2>地图侦察</h2>
+          <button id="refreshScoutBtn" type="button">地图分析</button>
+        </div>
+        <div id="mapScoutText" class="map-scout-empty">地图页会显示未来路线的怪物、事件和风险预警。</div>
+        <div id="mapScoutOverview" class="map-scout-overview"></div>
+        <div id="eventDetail" class="event-detail" hidden></div>
+        <div id="mapScoutRoutes" class="map-scout-routes"></div>
+      </section>
+
       <section class="note-box">
         <label for="noteInput">补充说明</label>
         <textarea id="noteInput" rows="3" placeholder="例如：我想保守一点，或者下一层准备打精英。"></textarea>

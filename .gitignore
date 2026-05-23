@@ -19,6 +19,7 @@ _private/
 # Local vendor artifacts
 sts2-coach/vendor/
 sts2-coach/vendor/*.zip
+sts2-coach/data/spire-codex/
 
 # OS / editor
 .DS_Store

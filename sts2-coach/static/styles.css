@@ -85,6 +85,7 @@ h2 {
 .status-grid > div,
 .summary,
 .note-box,
+.map-scout,
 .advice {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -119,6 +120,7 @@ h2 {
 
 .summary,
 .note-box,
+.map-scout,
 .advice {
   padding: 12px;
   margin-bottom: 12px;
@@ -147,7 +149,8 @@ pre {
 }
 
 .controls button,
-#saveAdviceBtn {
+#saveAdviceBtn,
+#refreshScoutBtn {
   min-height: 40px;
   border-radius: 6px;
   border: 1px solid var(--line);
@@ -158,16 +161,225 @@ pre {
 
 .controls button:hover,
 #saveAdviceBtn:hover,
+#refreshScoutBtn:hover,
 .icon-btn:hover {
   border-color: var(--accent);
 }
 
 .controls button:focus-visible,
 #saveAdviceBtn:focus-visible,
+#refreshScoutBtn:focus-visible,
 .icon-btn:focus-visible,
 textarea:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
+}
+
+.map-scout-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+#refreshScoutBtn {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.map-scout-empty {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.map-scout-routes {
+  display: grid;
+  gap: 8px;
+}
+
+.map-scout-overview {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.scout-group {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.scout-group h3,
+.route-section-title {
+  margin: 0 0 8px;
+  color: var(--accent);
+  font-size: 14px;
+}
+
+.encounter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.encounter-card {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #11161a;
+  padding: 8px;
+}
+
+.encounter-card strong,
+.encounter-card span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.encounter-card strong {
+  font-size: 13px;
+  margin-bottom: 3px;
+}
+
+.encounter-card span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.encounter-images {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.encounter-images img {
+  width: 38px;
+  height: 38px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  object-fit: contain;
+  background: #0b0e10;
+}
+
+.event-pool {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.event-pool button {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #11161a;
+  color: var(--muted);
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.event-pool button:hover,
+.event-pool button:focus-visible {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.event-detail {
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #11161a;
+  padding: 10px;
+}
+
+.event-detail h3 {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+
+.event-detail p {
+  margin: 8px 0;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.event-detail-meta,
+.event-detail-block {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.event-options {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.event-option {
+  border-top: 1px solid var(--line);
+  padding-top: 6px;
+}
+
+.event-option strong,
+.event-option span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.event-option strong {
+  font-size: 12px;
+}
+
+.event-option span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.route-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #11161a;
+  padding: 10px;
+}
+
+.route-card h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+
+.route-meta,
+.route-warning,
+.route-events {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.route-risk {
+  display: inline-block;
+  margin-left: 6px;
+  color: var(--accent);
+}
+
+.route-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.route-images img {
+  width: 54px;
+  height: 54px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  object-fit: contain;
+  background: #0b0e10;
 }
 
 .note-box label {
@@ -219,7 +431,8 @@ textarea {
     padding: 10px;
   }
 
-  .controls {
+  .controls,
+  .encounter-grid {
     grid-template-columns: 1fr;
   }
 }

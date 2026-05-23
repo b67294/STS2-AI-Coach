@@ -13,6 +13,8 @@ from typing import Any
 from urllib import error, request
 from urllib.parse import urlparse
 
+from map_scout import DATA_DIR as SPIRE_CODEX_DATA_DIR
+from map_scout import scout_map, scout_prompt_summary
 from tracing import TraceContext
 
 
@@ -85,6 +87,22 @@ def text_response(handler: BaseHTTPRequestHandler, status: int, body: bytes, con
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
     handler.wfile.write(body)
+
+
+def content_type_for(path: Path) -> str:
+    content_types = {
+        ".html": "text/html; charset=utf-8",
+        ".css": "text/css; charset=utf-8",
+        ".js": "application/javascript; charset=utf-8",
+        ".json": "application/json; charset=utf-8",
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp",
+        ".gif": "image/gif",
+        ".svg": "image/svg+xml",
+    }
+    return content_types.get(path.suffix.lower(), "application/octet-stream")
 
 
 def read_json_body(handler: BaseHTTPRequestHandler) -> dict[str, Any]:
@@ -656,6 +674,10 @@ class CoachHandler(BaseHTTPRequestHandler):
                 self.handle_health()
             elif parsed.path == "/api/state":
                 self.handle_state()
+            elif parsed.path == "/api/map/scout":
+                self.handle_map_scout()
+            elif parsed.path.startswith("/assets/spire-codex/"):
+                self.handle_spire_codex_asset(parsed.path)
             else:
                 self.handle_static(parsed.path)
         except Exception as exc:
@@ -738,6 +760,10 @@ class CoachHandler(BaseHTTPRequestHandler):
             },
         )
 
+    def handle_map_scout(self) -> None:
+        raw_state = get_raw_state()
+        json_response(self, 200, scout_map(raw_state))
+
     def handle_analyze(self) -> None:
         trace = TraceContext()
         try:
@@ -755,6 +781,10 @@ class CoachHandler(BaseHTTPRequestHandler):
 
             with trace.span("summarize_state"):
                 summary = summarize_state(raw_state)
+                if mode == "map":
+                    scout = scout_map(raw_state)
+                    summary["map_scout"] = scout_prompt_summary(scout)
+                    trace.set_meta(map_scout_ready=bool(scout.get("ok")))
 
             with trace.span("load_context"):
                 memory = load_memory()
@@ -801,6 +831,10 @@ class CoachHandler(BaseHTTPRequestHandler):
 
             with trace.span("summarize_state"):
                 summary = summarize_state(raw_state)
+                if mode == "map":
+                    scout = scout_map(raw_state)
+                    summary["map_scout"] = scout_prompt_summary(scout)
+                    trace.set_meta(map_scout_ready=bool(scout.get("ok")))
 
             recommended_mode = detect_recommended_mode(summary)
             sse_write(self, "state", {"state": summary, "recommended_mode": recommended_mode})
@@ -856,14 +890,18 @@ class CoachHandler(BaseHTTPRequestHandler):
         if not file_path.exists() or not file_path.is_file():
             json_response(self, 404, {"ok": False, "error": "Not found."})
             return
-        content_types = {
-            ".html": "text/html; charset=utf-8",
-            ".css": "text/css; charset=utf-8",
-            ".js": "application/javascript; charset=utf-8",
-            ".json": "application/json; charset=utf-8",
-        }
-        content_type = content_types.get(file_path.suffix.lower(), "application/octet-stream")
-        text_response(self, 200, file_path.read_bytes(), content_type)
+        text_response(self, 200, file_path.read_bytes(), content_type_for(file_path))
+
+    def handle_spire_codex_asset(self, path: str) -> None:
+        safe = path.removeprefix("/assets/spire-codex/").replace("\\", "/")
+        if not safe or ".." in safe.split("/"):
+            json_response(self, 400, {"ok": False, "error": "Invalid asset path."})
+            return
+        file_path = SPIRE_CODEX_DATA_DIR / safe
+        if not file_path.exists() or not file_path.is_file():
+            json_response(self, 404, {"ok": False, "error": "Asset not found."})
+            return
+        text_response(self, 200, file_path.read_bytes(), content_type_for(file_path))
 
 
 def main() -> None:
