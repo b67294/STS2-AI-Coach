@@ -11,7 +11,7 @@
       <header class="topbar">
         <div>
           <h1>STS2 Coach</h1>
-          <p id="subtitle">猎人 A10 宏观陪练</p>
+          <p id="subtitle">全角色宏观陪练</p>
         </div>
         <button id="refreshBtn" class="icon-btn" title="刷新状态">↻</button>
       </header>
@@ -51,12 +51,18 @@
       <section class="map-scout" aria-label="地图侦察">
         <div class="map-scout-header">
           <h2>地图侦察</h2>
-          <button id="refreshScoutBtn" type="button">地图分析</button>
+          <div class="map-scout-actions">
+            <button id="toggleScoutBtn" type="button">收起</button>
+            <button id="refreshScoutBtn" type="button">地图分析</button>
+          </div>
         </div>
-        <div id="mapScoutText" class="map-scout-empty">地图页会显示未来路线的怪物、事件和风险预警。</div>
-        <div id="mapScoutOverview" class="map-scout-overview"></div>
-        <div id="eventDetail" class="event-detail" hidden></div>
-        <div id="mapScoutRoutes" class="map-scout-routes"></div>
+        <div id="mapScoutBody">
+          <div id="mapScoutText" class="map-scout-empty">地图页会显示未来路线的怪物、事件和风险预警。</div>
+          <div id="mapScoutOverview" class="map-scout-overview"></div>
+          <div id="monsterDetail" class="monster-detail" hidden></div>
+          <div id="eventDetail" class="event-detail" hidden></div>
+          <div id="mapScoutRoutes" class="map-scout-routes"></div>
+        </div>
       </section>
 
       <section class="note-box">
@@ -70,9 +76,11 @@
           <button id="saveAdviceBtn" disabled>记录建议</button>
         </div>
         <div id="loading" hidden>分析中...</div>
-        <pre id="adviceText">在奖励、地图、事件、商店或 Boss 前点击上面的按钮。</pre>
+        <div id="adviceText" class="markdown-body">在奖励、地图、事件、商店或 Boss 前点击上面的按钮。</div>
       </section>
     </main>
+    <script src="/vendor/marked.min.js"></script>
+    <script src="/vendor/purify.min.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

@@ -2,6 +2,6 @@
 
 Use this file to keep short notes for the active run.
 
-- Character: Silent / 猎人
-- Ascension target: A10
+- Character: determined from live game state
+- Ascension target: determined from live game state
 - Notes:

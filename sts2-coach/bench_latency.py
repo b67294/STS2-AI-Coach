@@ -38,7 +38,7 @@ class BenchResult:
 
 def slim_knowledge_for(summary: dict[str, Any]) -> str:
     parts = []
-    for filename in ("silent-a10.md", "events.md"):
+    for filename in ("general-playbook.md", "events.md"):
         text = read_text(KNOWLEDGE_DIR / filename)
         if text:
             parts.append(text)

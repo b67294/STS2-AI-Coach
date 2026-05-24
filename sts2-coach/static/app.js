@@ -8,14 +8,18 @@ const loading = document.getElementById("loading");
 const noteInput = document.getElementById("noteInput");
 const saveAdviceBtn = document.getElementById("saveAdviceBtn");
 const refreshBtn = document.getElementById("refreshBtn");
+const toggleScoutBtn = document.getElementById("toggleScoutBtn");
 const refreshScoutBtn = document.getElementById("refreshScoutBtn");
+const mapScoutBody = document.getElementById("mapScoutBody");
 const mapScoutText = document.getElementById("mapScoutText");
 const mapScoutOverview = document.getElementById("mapScoutOverview");
+const monsterDetail = document.getElementById("monsterDetail");
 const eventDetail = document.getElementById("eventDetail");
 const mapScoutRoutes = document.getElementById("mapScoutRoutes");
 
 let lastAdvice = "";
 let lastState = null;
+let scoutCollapsed = false;
 
 function setStatus(el, text, ok) {
   el.textContent = text;
@@ -29,10 +33,13 @@ function compactState(state) {
   const player = state.player || {};
   const deck = Array.isArray(state.deck) ? state.deck : [];
   const relics = Array.isArray(state.relics) ? state.relics : [];
+  const hp = player.hp ?? run.hp ?? run.current_hp ?? state.current_hp;
+  const maxHp = player.max_hp ?? run.max_hp ?? state.max_hp;
+  const gold = player.gold ?? run.gold ?? state.gold;
   const lines = [
     `角色/进阶：${run.character || player.character || "未知"} / A${run.ascension ?? "?"}`,
     `楼层/Boss：${run.floor ?? "?"} / ${run.boss || run.boss_id || "未知"}`,
-    `血量/金币：${player.hp ?? "?"}/${player.max_hp ?? "?"} / ${player.gold ?? "?"}`,
+    `血量/金币：${hp ?? "?"}/${maxHp ?? "?"} / ${gold ?? "?"}`,
     `牌组：${deck.length} 张`,
     `遗物：${relics.length} 个`,
     `可用动作：${Array.isArray(state.available_actions) ? state.available_actions.join(", ") : "未知"}`,
@@ -76,12 +83,43 @@ function withTrace(text, trace) {
   return `${text || ""}${formatTrace(trace)}`;
 }
 
+function markdownToHtml(markdown) {
+  const source = markdown || "";
+  if (!window.marked || !window.DOMPurify) {
+    return source.replace(/[&<>"']/g, (char) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    })[char]);
+  }
+  marked.setOptions({ breaks: true, gfm: true });
+  return DOMPurify.sanitize(marked.parse(source));
+}
+
+function setAdviceMarkdown(markdown) {
+  adviceText.innerHTML = markdownToHtml(markdown);
+}
+
+function setAdvicePlain(text) {
+  adviceText.textContent = text || "";
+}
+
 function clearMapScout(text = "地图页会显示未来路线的怪物、事件和风险预警。") {
   mapScoutText.textContent = text;
   mapScoutOverview.innerHTML = "";
+  monsterDetail.hidden = true;
+  monsterDetail.innerHTML = "";
   eventDetail.hidden = true;
   eventDetail.innerHTML = "";
   mapScoutRoutes.innerHTML = "";
+}
+
+function setScoutCollapsed(collapsed) {
+  scoutCollapsed = collapsed;
+  mapScoutBody.hidden = collapsed;
+  toggleScoutBtn.textContent = collapsed ? "展开" : "收起";
 }
 
 function riskLabel(risk) {
@@ -93,6 +131,102 @@ function riskLabel(risk) {
 function encounterImages(encounter) {
   const monsters = Array.isArray(encounter.monsters) ? encounter.monsters : [];
   return monsters.map((monster) => monster.image_url).filter(Boolean);
+}
+
+function formatValue(value) {
+  if (value === null || value === undefined || value === "") return "";
+  if (typeof value === "object") {
+    if ("normal" in value || "ascension" in value) {
+      const normal = value.normal ?? "?";
+      const asc = value.ascension ?? normal;
+      return `${normal} / 进阶 ${asc}`;
+    }
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+
+function hpLine(monster) {
+  const normal =
+    monster.min_hp !== null && monster.min_hp !== undefined && monster.max_hp !== null && monster.max_hp !== undefined
+      ? `${monster.min_hp}-${monster.max_hp}`
+      : "";
+  const asc =
+    monster.min_hp_ascension !== null &&
+    monster.min_hp_ascension !== undefined &&
+    monster.max_hp_ascension !== null &&
+    monster.max_hp_ascension !== undefined
+      ? `${monster.min_hp_ascension}-${monster.max_hp_ascension}`
+      : "";
+  if (normal && asc) return `生命：${normal} / 进阶 ${asc}`;
+  if (normal) return `生命：${normal}`;
+  return "";
+}
+
+function renderMonsterDetail(monster) {
+  monsterDetail.hidden = false;
+  monsterDetail.innerHTML = "";
+  eventDetail.hidden = true;
+
+  const header = document.createElement("div");
+  header.className = "monster-detail-header";
+  if (monster.image_url) {
+    const img = document.createElement("img");
+    img.src = monster.image_url;
+    img.alt = monster.name || "怪物";
+    header.appendChild(img);
+  }
+  const titleBox = document.createElement("div");
+  const title = document.createElement("h3");
+  title.textContent = monster.name || monster.id || "未知怪物";
+  titleBox.appendChild(title);
+  const meta = document.createElement("div");
+  meta.className = "monster-detail-meta";
+  meta.textContent = [monster.type, hpLine(monster)].filter(Boolean).join(" / ");
+  titleBox.appendChild(meta);
+  header.appendChild(titleBox);
+  monsterDetail.appendChild(header);
+
+  if (monster.attack_pattern && monster.attack_pattern.description) {
+    const pattern = document.createElement("p");
+    pattern.textContent = `行动模式：${monster.attack_pattern.description}`;
+    monsterDetail.appendChild(pattern);
+  }
+
+  const moves = Array.isArray(monster.moves) ? monster.moves : [];
+  if (moves.length) {
+    const moveTitle = document.createElement("h4");
+    moveTitle.textContent = "可能意图 / 行动";
+    monsterDetail.appendChild(moveTitle);
+    const list = document.createElement("div");
+    list.className = "monster-moves";
+    for (const move of moves) {
+      const item = document.createElement("div");
+      item.className = "monster-move";
+      const name = document.createElement("strong");
+      name.textContent = `${move.name || move.id || "行动"}${move.intent ? ` · ${move.intent}` : ""}`;
+      item.appendChild(name);
+      const parts = [];
+      const damage = formatValue(move.damage);
+      const block = formatValue(move.block);
+      if (damage) parts.push(`伤害：${damage}`);
+      if (block) parts.push(`格挡：${block}`);
+      if (Array.isArray(move.powers) && move.powers.length) {
+        parts.push(
+          `效果：${move.powers
+            .map((power) => `${power.power_id || "Power"}${power.amount !== undefined ? ` ${power.amount}` : ""}`)
+            .join(" / ")}`
+        );
+      }
+      if (parts.length) {
+        const desc = document.createElement("span");
+        desc.textContent = parts.join("；");
+        item.appendChild(desc);
+      }
+      list.appendChild(item);
+    }
+    monsterDetail.appendChild(list);
+  }
 }
 
 function renderEncounterGroup(title, encounters) {
@@ -110,16 +244,22 @@ function renderEncounterGroup(title, encounters) {
     const item = document.createElement("article");
     item.className = "encounter-card";
 
-    const images = encounterImages(encounter).slice(0, 4);
-    if (images.length) {
+    const encounterMonsters = Array.isArray(encounter.monsters) ? encounter.monsters : [];
+    if (encounterMonsters.some((monster) => monster.image_url)) {
       const imgBox = document.createElement("div");
       imgBox.className = "encounter-images";
-      for (const url of images) {
+      for (const monster of encounterMonsters.slice(0, 4)) {
+        if (!monster.image_url) continue;
+        const button = document.createElement("button");
+        button.type = "button";
+        button.title = monster.name || monster.id || "怪物";
+        button.addEventListener("click", () => renderMonsterDetail(monster));
         const img = document.createElement("img");
-        img.src = url;
-        img.alt = encounter.name || "遭遇";
+        img.src = monster.image_url;
+        img.alt = monster.name || "怪物";
         img.loading = "lazy";
-        imgBox.appendChild(img);
+        button.appendChild(img);
+        imgBox.appendChild(button);
       }
       item.appendChild(imgBox);
     }
@@ -128,9 +268,7 @@ function renderEncounterGroup(title, encounters) {
     name.textContent = encounter.name || encounter.id || "未知遭遇";
     item.appendChild(name);
 
-    const monsters = Array.isArray(encounter.monsters)
-      ? encounter.monsters.map((monster) => monster.name || monster.id).filter(Boolean)
-      : [];
+    const monsters = encounterMonsters.map((monster) => monster.name || monster.id).filter(Boolean);
     if (monsters.length) {
       const meta = document.createElement("span");
       meta.textContent = monsters.join(" / ");
@@ -174,6 +312,7 @@ function cleanMarkup(text) {
 function renderEventDetail(event) {
   eventDetail.hidden = false;
   eventDetail.innerHTML = "";
+  monsterDetail.hidden = true;
 
   const title = document.createElement("h3");
   title.textContent = event.name || event.id || "未知事件";
@@ -223,6 +362,8 @@ function renderEventDetail(event) {
 
 function renderMapOverview(overview) {
   mapScoutOverview.innerHTML = "";
+  monsterDetail.hidden = true;
+  monsterDetail.innerHTML = "";
   eventDetail.hidden = true;
   eventDetail.innerHTML = "";
   if (!overview || !overview.encounters) return;
@@ -353,14 +494,14 @@ async function analyzeStream(mode) {
         stateSummary.textContent = compactState(payload.state);
         modeStatus.textContent = payload.recommended_mode || mode;
       } else if (item.event === "status" && !advice) {
-        adviceText.textContent = "分析中，正在等待模型输出...";
+        setAdvicePlain("分析中，正在等待模型输出...");
       } else if (item.event === "delta") {
         advice += payload.text || "";
-        adviceText.textContent = advice;
+        setAdviceMarkdown(advice);
       } else if (item.event === "done") {
         lastAdvice = payload.advice || advice;
         lastState = payload.state || lastState;
-        adviceText.textContent = withTrace(lastAdvice, payload.trace);
+        setAdviceMarkdown(withTrace(lastAdvice, payload.trace));
         modeStatus.textContent = payload.recommended_mode || mode;
         saveAdviceBtn.disabled = !lastAdvice;
         return;
@@ -378,7 +519,7 @@ async function analyzeStream(mode) {
 
 async function analyze(mode) {
   loading.hidden = false;
-  adviceText.textContent = "分析中，正在建立流式连接...";
+  setAdvicePlain("分析中，正在建立流式连接...");
   saveAdviceBtn.disabled = true;
   lastAdvice = "";
   try {
@@ -387,7 +528,7 @@ async function analyze(mode) {
     }
     await analyzeStream(mode);
   } catch (error) {
-    adviceText.textContent = withTrace(`分析失败：${error.message}`, error.payload && error.payload.trace);
+    setAdviceMarkdown(withTrace(`分析失败：${error.message}`, error.payload && error.payload.trace));
   } finally {
     loading.hidden = true;
   }
@@ -401,9 +542,9 @@ async function saveAdvice() {
       method: "POST",
       body: JSON.stringify({ source: "advice", note }),
     });
-    adviceText.textContent = `${lastAdvice}\n\n已记录：${payload.entry}`;
+    setAdviceMarkdown(`${lastAdvice}\n\n已记录：${payload.entry}`);
   } catch (error) {
-    adviceText.textContent = `${lastAdvice}\n\n记录失败：${error.message}`;
+    setAdviceMarkdown(`${lastAdvice}\n\n记录失败：${error.message}`);
   }
 }
 
@@ -412,6 +553,7 @@ document.querySelectorAll("[data-mode]").forEach((button) => {
 });
 
 refreshBtn.addEventListener("click", refreshHealth);
+toggleScoutBtn.addEventListener("click", () => setScoutCollapsed(!scoutCollapsed));
 refreshScoutBtn.addEventListener("click", refreshMapScout);
 saveAdviceBtn.addEventListener("click", saveAdvice);
 

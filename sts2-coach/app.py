@@ -231,15 +231,24 @@ def summarize_relics(relics: Any) -> list[dict[str, Any]]:
 
 def summarize_state(state: dict[str, Any]) -> dict[str, Any]:
     run = state.get("run") if isinstance(state.get("run"), dict) else {}
+    agent_view = state.get("agent_view") if isinstance(state.get("agent_view"), dict) else {}
+    agent_run = agent_view.get("run") if isinstance(agent_view.get("run"), dict) else {}
     player = state.get("player") if isinstance(state.get("player"), dict) else {}
     if not player and isinstance(run, dict):
         player = run.get("player") if isinstance(run.get("player"), dict) else {}
+    if not player and isinstance(run.get("players"), list) and run.get("players"):
+        first_player = run["players"][0]
+        player = first_player if isinstance(first_player, dict) else {}
 
     deck = state.get("deck") or run.get("deck") if isinstance(run, dict) else None
     if isinstance(deck, dict):
         deck_cards = deck.get("cards") or deck.get("draw_pile") or deck.get("master_deck")
     else:
         deck_cards = deck
+
+    current_hp = run.get("current_hp") or player.get("current_hp") or state.get("current_hp")
+    max_hp = run.get("max_hp") or player.get("max_hp") or state.get("max_hp")
+    gold = run.get("gold") or player.get("gold") or state.get("gold")
 
     summary: dict[str, Any] = {
         "screen": state.get("screen"),
@@ -249,10 +258,21 @@ def summarize_state(state: dict[str, Any]) -> dict[str, Any]:
         "run": short_value(
             {
                 **pick(run, "floor", "act", "act_id", "boss", "boss_id", "ascension", "seed"),
-                "character": run.get("character") or run.get("character_id") if isinstance(run, dict) else None,
+                "character": run.get("character") or run.get("character_name") or run.get("character_id") or agent_run.get("character"),
+                "current_hp": current_hp,
+                "max_hp": max_hp,
+                "hp": agent_run.get("hp"),
+                "gold": gold,
             }
         ),
-        "player": short_value(pick(player, "name", "character", "hp", "max_hp", "gold", "block", "energy")),
+        "player": short_value(
+            {
+                **pick(player, "name", "character", "character_id", "character_name", "hp", "max_hp", "current_hp", "gold", "block", "energy"),
+                "hp": player.get("hp") or current_hp,
+                "max_hp": player.get("max_hp") or max_hp,
+                "gold": player.get("gold") or gold,
+            }
+        ),
         "deck": summarize_cards(deck_cards),
         "relics": summarize_relics(state.get("relics") or run.get("relics") if isinstance(run, dict) else None),
         "potions": short_value(state.get("potions") or run.get("potions") if isinstance(run, dict) else None),
@@ -284,7 +304,7 @@ def detect_recommended_mode(summary: dict[str, Any]) -> str:
 
 def load_knowledge() -> str:
     parts = []
-    for filename in ("silent-a10.md", "bosses.md", "events.md"):
+    for filename in ("general-playbook.md", "bosses.md", "events.md"):
         text = read_text(KNOWLEDGE_DIR / filename)
         if text:
             parts.append(text)
@@ -357,7 +377,7 @@ def build_openai_payload(
             {"role": "system", "content": system_prompt},
             {
                 "role": "user",
-                "content": "请根据以下 JSON 为当前 STS2 猎人 A10 run 给宏观建议：\n"
+                "content": "请根据以下 JSON 为当前 STS2 run 给宏观建议。角色、进阶、楼层、Boss 和当前屏幕必须以 JSON 中的实时状态为准：\n"
                 + json.dumps(user_payload, ensure_ascii=False, indent=2),
             },
         ],
@@ -452,7 +472,7 @@ def call_chat_completions(
                 {"role": "system", "content": system_prompt},
                 {
                     "role": "user",
-                    "content": "请根据以下 JSON 为当前 STS2 猎人 A10 run 给宏观建议：\n"
+                    "content": "请根据以下 JSON 为当前 STS2 run 给宏观建议。角色、进阶、楼层、Boss 和当前屏幕必须以 JSON 中的实时状态为准：\n"
                     + json.dumps(user_payload, ensure_ascii=False, indent=2),
                 },
             ],
@@ -540,7 +560,7 @@ def call_chat_completions_stream(
                 {"role": "system", "content": system_prompt},
                 {
                     "role": "user",
-                    "content": "请根据以下 JSON 为当前 STS2 猎人 A10 run 给宏观建议：\n"
+                    "content": "请根据以下 JSON 为当前 STS2 run 给宏观建议。角色、进阶、楼层、Boss 和当前屏幕必须以 JSON 中的实时状态为准：\n"
                     + json.dumps(user_payload, ensure_ascii=False, indent=2),
                 },
             ],

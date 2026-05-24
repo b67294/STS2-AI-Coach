@@ -45,7 +45,7 @@ class TtfbResult:
 
 def slim_knowledge_for(summary: dict[str, Any]) -> str:
     parts = []
-    for filename in ("silent-a10.md", "events.md"):
+    for filename in ("general-playbook.md", "events.md"):
         text = read_text(KNOWLEDGE_DIR / filename)
         if text:
             parts.append(text)
@@ -78,7 +78,7 @@ def build_chat_payload(
             {"role": "system", "content": system_prompt},
             {
                 "role": "user",
-                "content": "请根据以下 JSON 为当前 STS2 猎人 A10 run 给宏观建议：\n"
+                "content": "请根据以下 JSON 为当前 STS2 run 给宏观建议。角色、进阶、楼层、Boss 和当前屏幕必须以 JSON 中的实时状态为准：\n"
                 + json.dumps(user_payload, ensure_ascii=False, indent=2),
             },
         ],

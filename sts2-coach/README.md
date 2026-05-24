@@ -1,6 +1,6 @@
 # STS2 Coach
 
-本地网页陪练 MVP：读取 `STS2-Agent` Mod 的只读状态接口，调用 OpenAI API，给《杀戮尖塔 2》猎人 A10 的宏观建议。
+本地网页陪练 MVP：读取 `STS2-Agent` Mod 的只读状态接口，调用 OpenAI API，给《杀戮尖塔 2》当前 run 的中文宏观建议。
 
 ## 运行前准备
 

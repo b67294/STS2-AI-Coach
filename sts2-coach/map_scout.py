@@ -168,24 +168,31 @@ def encounter_monster_refs(encounter: dict[str, Any]) -> list[str]:
 
 
 def summarize_monster(monster: dict[str, Any]) -> dict[str, Any]:
-    hp = first_value(monster, "hp", "hp_range", "max_hp", "health")
-    moves = first_value(monster, "moves", "move_set", "attacks")
-    if isinstance(moves, list):
-        move_names = []
-        for move in moves[:4]:
-            if isinstance(move, dict):
-                name = first_value(move, "name", "id", "intent")
-                if isinstance(name, str):
-                    move_names.append(name)
-            elif isinstance(move, str):
-                move_names.append(move)
-        moves = move_names
+    moves = []
+    for move in first_value(monster, "moves", "move_set", "attacks") or []:
+        if not isinstance(move, dict):
+            continue
+        moves.append(
+            {
+                "id": move.get("id"),
+                "name": first_value(move, "name", "id", "intent"),
+                "intent": move.get("intent"),
+                "damage": move.get("damage"),
+                "block": move.get("block"),
+                "powers": move.get("powers") if isinstance(move.get("powers"), list) else [],
+            }
+        )
     return {
         "id": monster.get("id"),
         "name": monster.get("name") or monster.get("id"),
         "type": first_value(monster, "type", "monster_type"),
-        "hp": hp,
-        "moves": moves if isinstance(moves, list) else [],
+        "min_hp": monster.get("min_hp"),
+        "max_hp": monster.get("max_hp"),
+        "min_hp_ascension": monster.get("min_hp_ascension"),
+        "max_hp_ascension": monster.get("max_hp_ascension"),
+        "moves": moves[:8],
+        "attack_pattern": monster.get("attack_pattern") if isinstance(monster.get("attack_pattern"), dict) else None,
+        "innate_powers": monster.get("innate_powers") if isinstance(monster.get("innate_powers"), list) else [],
         "image_url": image_asset_url(first_value(monster, "image_url", "image", "sprite_url")),
     }
 
